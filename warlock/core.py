@@ -15,14 +15,32 @@
 """Core Warlock functionality"""
 
 import copy
+import json
+import os
 
 from . import model
 
 
-def model_factory(schema, base_class=model.Model, parent_class_only=True):
-    factory = ModelFactory(schema, base_class)
+def model_factory(schema, base_class=model.Model, parent_class_only=True, schema_base_path=''):
+    if isinstance(schema, (str, unicode)):
+        if schema.lstrip().startswith('{'):
+            use_schema = json.loads(schema)
+        else:
+            if schema.startswith('/'):
+                schema_filepath = schema
+            else:
+                schema_filepath = os.path.join(schema_base_path, schema)
+            f = open(schema_filepath, 'r+b')
+            use_schema = json.load(f)
+            f.close()
+    elif isinstance(schema, dict):
+        use_schema = schema
+    else:
+        raise TypeError('schema must be a str, unicode or dict')
+
+    factory = ModelFactory(use_schema, base_class, schema_base_path)
     if parent_class_only:
-        factory.model_registry.get(factory.name)
+        return factory.model_registry.get(factory.name)
     else:
         return factory.model_registry
 
@@ -39,7 +57,11 @@ def _model_factory(schema, base_class=model.Model):
             self.__dict__['schema'] = schema
             base_class.__init__(self, *args, **kwargs)
 
-    NewModel.__name__ = str(schema['name'])
+    schema_name = get_schema_name(schema)
+    if schema_name is not None:
+        NewModel.__name__ = str(schema['name'])
+    else:
+        raise KeyError("name key not found")
     return NewModel
 
 
@@ -87,20 +109,28 @@ def merge_dict(a, b):
 
 
 class ModelFactory(object):
-    def __init__(self, schema, base_class=model.Model):
+    def __init__(self, schema, base_class=model.Model, schema_base_path=''):
         if not isinstance(schema, dict):
             raise TypeError('expected a dict')
+        self.schema_base_path = schema_base_path
         self.model_registry = dict()
         self.schema = copy.deepcopy(schema)
         self.base_class = base_class
         self.name = get_schema_name(schema)
         self.process_objects(self.schema)
 
-    def process_objects(self, schema):
+    def process_objects(self, schema, base_class=None):
         schema_name = get_schema_name(schema)
 
         if schema_name is None and schema.get('type') == 'object':
             raise KeyError('object must have name attribute. "{0}"'.format(schema))
+
+        if isinstance(base_class, (str, unicode)):
+            base_class_name = base_class
+        else:
+            base_class_name = None
+        if base_class is not type:
+            base_class = self.base_class
 
         if schema is not None and schema_name not in self.model_registry:
             for k, v in schema.items():
@@ -108,9 +138,7 @@ class ModelFactory(object):
                     self.process_objects(v)
 
             schema_type = schema.get('type')
-            if schema_type == 'object':
-                new_model = _model_factory(schema, self.base_class)
-            elif schema_type == 'array':
+            if schema_type == 'array':
                 items = schema.get('items')
                 if items is None:
                     raise KeyError('array object has no key "items". "{0}"'.format(schema))
@@ -121,13 +149,17 @@ class ModelFactory(object):
                 schema.pop('$ref')
                 new_model = self.process_objects(referenced)
             elif 'allOf' in schema:
-                all_of = self.resolve_all_of(schema)
-                new_model = self.process_objects(all_of)
+                super_class_name, all_of = self.resolve_all_of(schema)
+                new_model = self.process_objects(all_of, super_class_name)
+            elif schema_name is not None and (schema_type == 'object' or schema_type is None):
+                if base_class_name is not None:
+                    base_class = self.model_registry.get(base_class_name)
+                new_model = _model_factory(schema, base_class)
             else:
                 new_model = None
 
-            if new_model is not None:
-                self.model_registry.update({new_model.__name__: new_model})
+            if new_model is not None and schema_name is not None:
+                self.model_registry.update({schema_name: new_model})
 
             return new_model
         else:
@@ -140,10 +172,13 @@ class ModelFactory(object):
         uri = d.get('$ref')
         file_name, path = process_uri(uri)
         if len(file_name) > 0:
-            #TODO process references to load external files (ie.: somefile.json#/definitions/somekey)
-            raise NotImplementedError('does not support external files ont $ref URI')
+            file_name = os.path.join(self.schema_base_path, file_name)
+            f = open(file_name, 'r+b')
+            referenced = json.load(f)
+            f.close()
+        else:
+            referenced = self.schema
 
-        referenced = self.schema
         referenced_key = None
         for k in path:
             referenced = referenced.get(k)
@@ -168,6 +203,13 @@ class ModelFactory(object):
             else:
                 items.append(i)
         all_of_schema.pop('allOf')
+
+        if len(origin) > 0:
+            self.process_objects(origin[0])
+            super_class_name = get_schema_name(origin[0])
+        else:
+            super_class_name = None
+
         items = origin + items + [all_of_schema]
         reduce(merge_dict, items)
-        return items[0]
+        return super_class_name, items[0]

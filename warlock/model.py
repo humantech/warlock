@@ -36,9 +36,15 @@ class Model(dict):
         # else:
         #     dict.__init__(self, d)
 
+        props = self.schema.get('properties', {})
+        for k, v in props.items():
+            if k not in d and 'default' in v:
+                d[k] = copy.deepcopy(v.get('default'))
+
         dict.__init__(self, d)
         self.__dict__['changes'] = {}
         self.__dict__['__original__'] = copy.deepcopy(d)
+
 
     def __setitem__(self, key, value):
         #TODO validation must be lazy to be able to use sub-schemas
@@ -129,12 +135,12 @@ class Model(dict):
         warnings.warn(deprecation_msg, DeprecationWarning, stacklevel=2)
         return copy.deepcopy(self.__dict__['changes'])
 
-    def validate(self, obj):
+    def validate(self, obj=None):
         """Apply a JSON schema to an object"""
         try:
-            jsonschema.validate(obj, self.schema)
+            if obj is None:
+                jsonschema.validate(self, self.schema)
+            else:
+                jsonschema.validate(obj, self.schema)
         except jsonschema.ValidationError as exc:
             raise exceptions.ValidationError(str(exc))
-
-    def validate_me(self):
-        self.validate(self)
