@@ -27,6 +27,8 @@ Classes = None
 
 
 class Model(dict):
+    _validators = list()
+
     def __init__(self, *args, **kwargs):
         # we overload setattr so set this manually
         d = dict(*args, **kwargs)
@@ -62,6 +64,17 @@ class Model(dict):
                             values.get(k, [])[i] = new_value
                 if k not in values and 'default' in v:
                     values[k] = copy.deepcopy(v.get('default'))
+
+    @classmethod
+    def add_validator(cls, v):
+        """Add custom validator on class
+
+        :param v: a callable that receives 2 parameters:
+                        first: is a dict instance representing the values;
+                        second: is a dict instance representing the schema.
+                    raises jsonschema.ValidationError
+        """
+        cls._validators.append(v)
 
     def __setitem__(self, key, value):
         #TODO validation must be lazy to be able to use sub-schemas
@@ -154,10 +167,13 @@ class Model(dict):
 
     def validate(self, obj=None):
         """Apply a JSON schema to an object"""
+        if obj is None:
+            use_obj = self
+        else:
+            use_obj = obj
         try:
-            if obj is None:
-                jsonschema.validate(self, self.schema)
-            else:
-                jsonschema.validate(obj, self.schema)
+            jsonschema.validate(use_obj, self.schema)
+            for v in self._validators:
+                v(use_obj, self.schema)
         except jsonschema.ValidationError as exc:
             raise exceptions.ValidationError(str(exc))
