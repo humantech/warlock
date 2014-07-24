@@ -27,7 +27,7 @@ Classes = None
 
 
 class Model(dict):
-    _validators = list()
+    _validators = None
 
     def __init__(self, *args, **kwargs):
         # we overload setattr so set this manually
@@ -74,6 +74,8 @@ class Model(dict):
                         second: is a dict instance representing the schema.
                     raises jsonschema.ValidationError
         """
+        if cls._validators is None:
+            cls._validators = list()
         cls._validators.append(v)
 
     def __setitem__(self, key, value):
@@ -173,7 +175,8 @@ class Model(dict):
             use_obj = obj
         try:
             jsonschema.validate(use_obj, self.schema)
-            for v in self._validators:
-                v(use_obj, self.schema)
+            if self._validators is not None:
+                for v in self._validators:
+                    v(use_obj, self.schema)
         except jsonschema.ValidationError as exc:
             raise exceptions.ValidationError(str(exc))
