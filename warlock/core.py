@@ -45,12 +45,14 @@ def model_factory(schema, base_class=model.Model, parent_class_only=True, schema
         return factory.model_registry
 
 
-def _model_factory(schema, base_class=model.Model):
+def _model_factory(schema, base_class=model.Model, classes=None):
     """Generate a model class based on the provided JSON Schema
 
     :param schema: dict representing valid JSON schema
     """
     schema = copy.deepcopy(schema)
+
+    model.Classes = classes
 
     class NewModel(base_class):
         def __init__(self, *args, **kwargs):
@@ -66,7 +68,7 @@ def _model_factory(schema, base_class=model.Model):
 
 
 def get_schema_name(schema):
-    identifiers = ['name', 'title', 'id']
+    identifiers = ['name']  # ['name', 'title', 'id']
     name = None
     for iden in identifiers:
         name = schema.get(iden)
@@ -154,7 +156,7 @@ class ModelFactory(object):
             elif schema_name is not None and (schema_type == 'object' or schema_type is None):
                 if base_class_name is not None:
                     base_class = self.model_registry.get(base_class_name)
-                new_model = _model_factory(schema, base_class)
+                new_model = _model_factory(schema, base_class, self.model_registry)
             else:
                 new_model = None
 

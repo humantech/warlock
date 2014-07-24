@@ -23,6 +23,8 @@ import six
 
 from . import exceptions
 
+Classes = None
+
 
 class Model(dict):
     def __init__(self, *args, **kwargs):
@@ -36,15 +38,30 @@ class Model(dict):
         # else:
         #     dict.__init__(self, d)
 
-        props = self.schema.get('properties', {})
-        for k, v in props.items():
-            if k not in d and 'default' in v:
-                d[k] = copy.deepcopy(v.get('default'))
-
+        self._set_defaults(self.schema, d)
         dict.__init__(self, d)
         self.__dict__['changes'] = {}
         self.__dict__['__original__'] = copy.deepcopy(d)
 
+    def _set_defaults(self, schema, values):
+        props = schema.get('properties', {})
+        if Classes is not None and schema is not self.schema:
+            base_class = Classes.get(schema.get('name'))
+            if base_class is not None:
+                return base_class(values)
+        else:
+            for k, v in props.items():
+                if 'properties' in v:
+                    new_value = self._set_defaults(v, values.get(k))
+                    if new_value is not None:
+                        values[k] = new_value
+                if v.get('type') == 'array':
+                    for i, item in enumerate(values.get(k, [])):
+                        new_value = self._set_defaults(v.get('items'), item)
+                        if new_value is not None:
+                            values.get(k, [])[i] = new_value
+                if k not in values and 'default' in v:
+                    values[k] = copy.deepcopy(v.get('default'))
 
     def __setitem__(self, key, value):
         #TODO validation must be lazy to be able to use sub-schemas
