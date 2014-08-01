@@ -79,7 +79,7 @@ class Model(dict):
         cls._validators.append(v)
 
     def __setitem__(self, key, value):
-        #TODO validation must be lazy to be able to use sub-schemas
+        # TODO validation must be lazy to be able to use sub-schemas
         # mutation = dict(self.items())
         # mutation[key] = value
         # try:
@@ -167,14 +167,19 @@ class Model(dict):
         warnings.warn(deprecation_msg, DeprecationWarning, stacklevel=2)
         return copy.deepcopy(self.__dict__['changes'])
 
-    def validate(self, obj=None):
-        """Apply a JSON schema to an object"""
+    def validate(self, obj=None, validator=None):
+        """Validate the obj content over the schema
+
+        :param obj: a jsonschema value dict. If None, uses self
+        :param validator: a jsonschema.IValidator. If None, uses the jsonschema library defaults
+        :raise exceptions.ValidationError:
+        """
         if obj is None:
             use_obj = self
         else:
             use_obj = obj
         try:
-            jsonschema.validate(use_obj, self.schema)
+            jsonschema.validate(use_obj, self.schema, validator)
             if self._validators is not None:
                 for v in self._validators:
                     v(use_obj, self.schema)

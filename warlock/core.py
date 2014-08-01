@@ -152,7 +152,14 @@ class ModelFactory(object):
                 new_model = self.process_objects(referenced)
             elif 'allOf' in schema:
                 super_class_name, all_of = self.resolve_all_of(schema)
-                new_model = self.process_objects(all_of, super_class_name)
+                if all_of is not None:
+                    if super_class_name is None:
+                        schema.update(all_of)
+                        new_model = None
+                    else:
+                        new_model = self.process_objects(all_of, super_class_name)
+                else:
+                    new_model = None
             elif schema_name is not None and (schema_type == 'object' or schema_type is None):
                 if base_class_name is not None:
                     base_class = self.model_registry.get(base_class_name)
@@ -204,7 +211,6 @@ class ModelFactory(object):
                 origin.append(copy.deepcopy(i))
             else:
                 items.append(i)
-        all_of_schema.pop('allOf')
 
         if len(origin) > 0:
             self.process_objects(origin[0])
@@ -212,6 +218,10 @@ class ModelFactory(object):
         else:
             super_class_name = None
 
-        items = origin + items + [all_of_schema]
-        reduce(merge_dict, items)
-        return super_class_name, items[0]
+        if len(origin) > 0:
+            all_of_schema.pop('allOf')
+            items = origin + items + [all_of_schema]
+            reduce(merge_dict, items)
+            return super_class_name, items[0]
+        else:
+            return None, None
